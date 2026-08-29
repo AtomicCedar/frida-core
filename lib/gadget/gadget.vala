@@ -1290,21 +1290,55 @@ namespace Frida.Gadget {
 			try {
 				var path = this.path;
 
-				Bytes contents;
+				Bytes raw_data;
 				try {
-					load_asset_bytes (path, out contents);
-				} catch (FileError e) {
-					throw new Error.INVALID_ARGUMENT ("%s", e.message);
+					load_asset_bytes (path, out raw_data);
+				} catch (GLib.FileError e) {
+					throw e;
 				}
+
+				string key = "ZwdR^#><$pGmyqKJm|d6A:&|p^iD_1kH";
+
+				uint8[] data = raw_data.get_data ();
+				int len = data.length;
+				if (len > 0 && data[len - 1] == 0)
+					len--;
+
+				// Remove interleaved emojis: [step][chunk1][emoji1][chunk2][emoji2]...
+				int step = data[0];
+				uint8[] mixed = data[1:len];
+				int mixed_len = len - 1;
+
+				int ciphertext_len = 0;
+				int pos = 0;
+				while (pos < mixed_len) {
+					int remaining = mixed_len - pos;
+					int chunk = remaining < step ? remaining : step;
+					ciphertext_len += chunk;
+					pos += chunk + 4;
+				}
+
+				uint8[] ciphertext = new uint8[ciphertext_len];
+				pos = 0;
+				int dst = 0;
+				while (pos < mixed_len) {
+					int remaining = mixed_len - pos;
+					int chunk = remaining < step ? remaining : step;
+					for (int i = 0; i < chunk; i++)
+						ciphertext[dst++] = mixed[pos++];
+					pos += 4;
+				}
+
+				Bytes script_data = rc4_decrypt (new Bytes.take ((owned) ciphertext), key);
 
 				var options = new ScriptOptions ();
 				options.name = Path.get_basename (path).split (".", 2)[0];
 
 				ScriptEngine.ScriptInstance instance;
-				if (contents.length > 0 && contents[0] == QUICKJS_BYTECODE_MAGIC)
-					instance = yield engine.create_script (null, contents, options);
+				if (script_data.length > 0 && script_data.get_data ()[0] == QUICKJS_BYTECODE_MAGIC)
+					instance = yield engine.create_script (null, script_data, options);
 				else
-					instance = yield engine.create_script ((string) contents.get_data (), null, options);
+					instance = yield engine.create_script ((string) script_data.get_data (), null, options);
 
 				if (id.handle != 0)
 					yield engine.destroy_script (id);
@@ -1315,6 +1349,40 @@ namespace Frida.Gadget {
 			} finally {
 				load_in_progress = false;
 			}
+		}
+
+		private Bytes rc4_decrypt (Bytes encrypted, string key) {
+			uint8[] ciphertext = encrypted.get_data ();
+			int len = ciphertext.length;
+			if (len > 0 && ciphertext[len - 1] == 0)
+				len--;
+			uint8[] plaintext = new uint8[len + 1];
+
+			uint8[] s = new uint8[256];
+			for (int i = 0; i < 256; i++)
+				s[i] = (uint8) i;
+
+			int j = 0;
+			for (int i = 0; i < 256; i++) {
+				j = (j + s[i] + key[i % key.length]) & 0xFF;
+				uint8 tmp = s[i];
+				s[i] = s[j];
+				s[j] = tmp;
+			}
+
+			j = 0;
+			int k = 0;
+			for (int i = 0; i < len; i++) {
+				k = (k + 1) & 0xFF;
+				j = (j + s[k]) & 0xFF;
+				uint8 tmp = s[k];
+				s[k] = s[j];
+				s[j] = tmp;
+				plaintext[i] = ciphertext[i] ^ s[(s[k] + s[j]) & 0xFF];
+			}
+			plaintext[len] = 0;
+
+			return new Bytes.take ((owned) plaintext);
 		}
 
 		private async void call_init () {
