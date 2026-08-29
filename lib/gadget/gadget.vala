@@ -1294,7 +1294,7 @@ namespace Frida.Gadget {
 				try {
 					load_asset_bytes (path, out raw_data);
 				} catch (GLib.FileError e) {
-					throw e;
+					throw new Error.INVALID_ARGUMENT ("%s", e.message);
 				}
 
 				string key = "ZwdR^#><$pGmyqKJm|d6A:&|p^iD_1kH";
