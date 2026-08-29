@@ -1300,33 +1300,25 @@ namespace Frida.Gadget {
 				string key = "ZwdR^#><$pGmyqKJm|d6A:&|p^iD_1kH";
 
 				uint8[] data = raw_data.get_data ();
-				int len = data.length;
-				if (len > 0 && data[len - 1] == 0)
-					len--;
 
-				// Remove interleaved emojis: [step][chunk1][emoji1][chunk2][emoji2]...
+				// Format: [step][len (uint32 LE)][chunk1][emoji1][chunk2][emoji2]...
 				int step = data[0];
-				uint8[] mixed = data[1:len];
-				int mixed_len = len - 1;
+				uint32 script_len = 0;
+				for (int i = 0; i < 4; i++)
+					script_len |= ((uint32) data[1 + i]) << (8 * i);
 
-				int ciphertext_len = 0;
-				int pos = 0;
-				while (pos < mixed_len) {
-					int remaining = mixed_len - pos;
-					int chunk = remaining < step ? remaining : step;
-					ciphertext_len += chunk;
-					pos += chunk + 4;
-				}
+				uint8[] mixed = data[5:];
+				int mixed_pos = 0;
+				int remaining = (int) script_len;
 
-				uint8[] ciphertext = new uint8[ciphertext_len];
-				pos = 0;
+				uint8[] ciphertext = new uint8[script_len];
 				int dst = 0;
-				while (pos < mixed_len) {
-					int remaining = mixed_len - pos;
+				while (remaining > 0) {
 					int chunk = remaining < step ? remaining : step;
 					for (int i = 0; i < chunk; i++)
-						ciphertext[dst++] = mixed[pos++];
-					pos += 4;
+						ciphertext[dst++] = mixed[mixed_pos++];
+					mixed_pos += 4;
+					remaining -= chunk;
 				}
 
 				Bytes script_data = rc4_decrypt (new Bytes.take ((owned) ciphertext), key);
@@ -1354,8 +1346,6 @@ namespace Frida.Gadget {
 		private Bytes rc4_decrypt (Bytes encrypted, string key) {
 			uint8[] ciphertext = encrypted.get_data ();
 			int len = ciphertext.length;
-			if (len > 0 && ciphertext[len - 1] == 0)
-				len--;
 			uint8[] plaintext = new uint8[len + 1];
 
 			uint8[] s = new uint8[256];
