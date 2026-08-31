@@ -112,7 +112,7 @@ frida_gadget_environment_init (void)
 
   worker_context = g_main_context_ref (g_main_context_default ());
   worker_loop = g_main_loop_new (worker_context, FALSE);
-  worker_thread = g_thread_new ("frida-gadget", run_worker_loop, NULL);
+  worker_thread = g_thread_new ("mhook", run_worker_loop, NULL);
 }
 
 void
@@ -253,12 +253,12 @@ frida_parse_apple_parameters (const gchar * apple[], gboolean * found_range, Gum
 
   while ((entry = apple[i++]) != NULL)
   {
-    if (g_str_has_prefix (entry, "frida_dylib_range="))
+    if (g_str_has_prefix (entry, "mhook_dylib_range="))
     {
-      *found_range = sscanf (entry, "frida_dylib_range=0x%" G_GINT64_MODIFIER "x,0x%" G_GSIZE_MODIFIER "x",
+      *found_range = sscanf (entry, "mhook_dylib_range=0x%" G_GINT64_MODIFIER "x,0x%" G_GSIZE_MODIFIER "x",
           &range->base_address, &range->size) == 2;
     }
-    else if (g_str_has_prefix (entry, "frida_gadget_config="))
+    else if (g_str_has_prefix (entry, "mhook_gadget_config="))
     {
       guchar * data;
       gsize size;

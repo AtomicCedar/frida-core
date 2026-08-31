@@ -1,5 +1,5 @@
 [wrap-git]
-url = https://github.com/frida/frida-gum.git
+url = https://github.com/AtomicCedar/frida-gum.git
 revision = 1908f00cfb6a6e757ce9549d41f37e8346777af1
 depth = 1
 

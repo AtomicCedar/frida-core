@@ -226,7 +226,7 @@ endif
 
 helper_name = 'frida-helper' + exe_suffix
 agent_name = 'frida-agent' + shlib_suffix
-gadget_name = 'frida-gadget' + shlib_suffix
+gadget_name = 'mhook' + shlib_suffix
 
 frida_libdir_name = f'frida-@api_version@'
 root_asset_dir = get_option('libdir') / frida_libdir_name
@@ -976,7 +976,7 @@ configure_file(
 
 add_project_arguments(
   (cc.get_argument_syntax() == 'msvc') ? '/FI' : '-include', meson.current_build_dir() / 'config.h',
-  '-DG_LOG_DOMAIN="Frida"',
+  '-DG_LOG_DOMAIN="Mhook"',
   '-DGLIB_VERSION_MIN_REQUIRED=GLIB_VERSION_2_56',
   '-DG_DISABLE_DEPRECATED',
   language: c_languages)
