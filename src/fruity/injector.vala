@@ -141,7 +141,7 @@ namespace Frida.Fruity.Injector {
 					return true;
 
 				MatchInfo info;
-				if (/^frida-gadget-tcp-(\d+)$/.match (name, 0, out info)) {
+				if (/^mhook-tcp-(\d+)$/.match (name, 0, out info)) {
 					string raw_port = info.fetch (1);
 
 					try {
@@ -367,7 +367,7 @@ namespace Frida.Fruity.Injector {
 			uint64 args = scratch_page;
 			var args_builder = lldb.make_buffer_builder ();
 
-			string range_param = ("frida_dylib_range=0x%" + uint64.FORMAT_MODIFIER + "x,0x%" + size_t.FORMAT_MODIFIER + "x")
+			string range_param = ("mhook_dylib_range=0x%" + uint64.FORMAT_MODIFIER + "x,0x%" + size_t.FORMAT_MODIFIER + "x")
 				.printf (module.base_address, module_size);
 
 			var config = new Json.Builder ();
@@ -388,7 +388,7 @@ namespace Frida.Fruity.Injector {
 					.add_string_value ("full")
 				.end_object ();
 			string raw_config = Json.to_string (config.get_root (), false);
-			string config_param = "frida_gadget_config=" + Base64.encode (raw_config.data);
+			string config_param = "mhook_gadget_config=" + Base64.encode (raw_config.data);
 
 			var apple_strv_builder = new StringVectorBuilder (args_builder);
 
