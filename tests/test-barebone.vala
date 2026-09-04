@@ -55,6 +55,46 @@ namespace Frida.BareboneTest {
 			h.run ();
 		});
 
+		GLib.Test.add_func ("/Barebone/ARM/enumerate-ranges-walks-short-descriptor-tables", () => {
+			var h = new Harness ((h) => enumerate_ranges_walks_short_descriptor_tables.begin (h as Harness));
+			h.run ();
+		});
+
+		GLib.Test.add_func ("/Barebone/ARM/enumerate-ranges-honors-protection-filter", () => {
+			var h = new Harness ((h) => arm_enumerate_ranges_honors_protection_filter.begin (h as Harness));
+			h.run ();
+		});
+
+		GLib.Test.add_func ("/Barebone/ARM/enumerate-ranges-rejects-lpae-tables", () => {
+			var h = new Harness ((h) => enumerate_ranges_rejects_lpae_tables.begin (h as Harness));
+			h.run ();
+		});
+
+		GLib.Test.add_func ("/Barebone/ARM/allocate-pages-takes-free-entries", () => {
+			var h = new Harness ((h) => arm_allocate_pages_takes_free_entries.begin (h as Harness));
+			h.run ();
+		});
+
+		GLib.Test.add_func ("/Barebone/ARM/allocate-pages-spans-leaf-tables", () => {
+			var h = new Harness ((h) => arm_allocate_pages_spans_leaf_tables.begin (h as Harness));
+			h.run ();
+		});
+
+		GLib.Test.add_func ("/Barebone/ARM/protect-pages-updates-page-entries", () => {
+			var h = new Harness ((h) => arm_protect_pages_updates_page_entries.begin (h as Harness));
+			h.run ();
+		});
+
+		GLib.Test.add_func ("/Barebone/ARM/protect-pages-rejects-sections", () => {
+			var h = new Harness ((h) => arm_protect_pages_rejects_sections.begin (h as Harness));
+			h.run ();
+		});
+
+		GLib.Test.add_func ("/Barebone/ARM/relocations-apply-load-bias", () => {
+			var h = new Harness ((h) => arm_relocations_apply_load_bias.begin (h as Harness));
+			h.run ();
+		});
+
 		GLib.Test.add_func ("/Barebone/Win9x/services-resolve-from-descriptor-block", () => {
 			var h = new Harness ((h) => services_resolve_from_descriptor_block.begin (h as Harness));
 			h.run ();
@@ -588,6 +628,12 @@ namespace Frida.BareboneTest {
 			h.run ();
 		});
 
+		GLib.Test.add_func ("/Barebone/Xnu/probe", () => {
+			var h = new Harness ((h) => xnu_probe.begin (
+				h as Harness, xnu_config_from_environment (h as Harness)));
+			h.run ();
+		});
+
 		GLib.Test.add_func ("/Barebone/Xnu/hooks-its-own-process-in-live-guest", () => {
 			var h = new Harness ((h) => xnu_hooks_its_own_process_in_live_guest.begin (
 				h as Harness, xnu_config_from_environment (h as Harness)));
@@ -708,6 +754,67 @@ namespace Frida.BareboneTest {
 
 		GLib.Test.add_func ("/Barebone/IA32/QEMU/invoke-calls-into-guest", () => {
 			var h = new SlowHarness ((h) => QEMU.invoke_calls_into_x86_guest.begin (h as SlowHarness));
+			h.run ();
+		});
+
+		GLib.Test.add_func ("/Barebone/ARM/QEMU/walk-finds-the-kernel", () => {
+			var h = new SlowHarness ((h) => QEMU.walk_finds_the_arm_kernel.begin (h as SlowHarness));
+			h.run ();
+		});
+
+		GLib.Test.add_func ("/Barebone/ARM/QEMU/whole-agent-loads-into-guest", () => {
+			var h = new SlowHarness ((h) => QEMU.whole_agent_loads_into_arm_guest.begin (h as SlowHarness));
+			h.run ();
+		});
+
+		GLib.Test.add_func ("/Barebone/ARM/agent-runs-in-live-guest", () => {
+			var h = new Harness ((h) => linux_agent_runs_in_live_guest.begin (h as Harness, "LINUX_ARM"));
+			h.run ();
+		});
+
+		GLib.Test.add_func ("/Barebone/ARM/injects-into-process-in-live-guest", () => {
+			var h = new Harness ((h) => linux_injects_into_process_in_live_guest.begin (h as Harness,
+				"LINUX_ARM"));
+			h.run ();
+		});
+
+		GLib.Test.add_func ("/Barebone/ARM/enumerates-processes-in-live-guest", () => {
+			var h = new Harness ((h) => linux_enumerates_processes_in_live_guest.begin (h as Harness,
+				"LINUX_ARM"));
+			h.run ();
+		});
+
+		GLib.Test.add_func ("/Barebone/IA32/agent-runs-in-live-guest", () => {
+			var h = new Harness ((h) => linux_agent_runs_in_live_guest.begin (h as Harness, "LINUX_X86"));
+			h.run ();
+		});
+
+		GLib.Test.add_func ("/Barebone/IA32/injects-into-process-in-live-guest", () => {
+			var h = new Harness ((h) => linux_injects_into_process_in_live_guest.begin (h as Harness,
+				"LINUX_X86"));
+			h.run ();
+		});
+
+		GLib.Test.add_func ("/Barebone/IA32/enumerates-processes-in-live-guest", () => {
+			var h = new Harness ((h) => linux_enumerates_processes_in_live_guest.begin (h as Harness,
+				"LINUX_X86"));
+			h.run ();
+		});
+
+		GLib.Test.add_func ("/Barebone/X64/agent-runs-in-live-guest", () => {
+			var h = new Harness ((h) => linux_agent_runs_in_live_guest.begin (h as Harness, "LINUX_X86_64"));
+			h.run ();
+		});
+
+		GLib.Test.add_func ("/Barebone/X64/injects-into-process-in-live-guest", () => {
+			var h = new Harness ((h) => linux_injects_into_process_in_live_guest.begin (h as Harness,
+				"LINUX_X86_64"));
+			h.run ();
+		});
+
+		GLib.Test.add_func ("/Barebone/X64/enumerates-processes-in-live-guest", () => {
+			var h = new Harness ((h) => linux_enumerates_processes_in_live_guest.begin (h as Harness,
+				"LINUX_X86_64"));
 			h.run ();
 		});
 
@@ -1163,6 +1270,47 @@ namespace Frida.BareboneTest {
 		h.done ();
 	}
 
+	private async void xnu_probe (Harness h, BareboneConfig? config) {
+		if (config == null)
+			return;
+
+		string? path = Environment.get_variable ("FRIDA_PROBE_JS");
+		if (path == null)
+			return;
+
+		string source;
+		try {
+			FileUtils.get_contents (path, out source);
+		} catch (GLib.Error e) {
+			return;
+		}
+
+		h.disable_timeout ();
+
+		var manager = new DeviceManager ();
+		try {
+			var device = yield manager.add_barebone_device (config);
+			var session = yield device.attach (0, null, null);
+			var script = yield session.create_script (source, null, null);
+
+			bool finished = false;
+			script.message.connect ((json, data) => {
+				printerr ("\nPROBE %s\n", json);
+				if (json.contains ("done"))
+					finished = true;
+			});
+			yield script.load (null);
+
+			while (!finished)
+				yield h.process_events ();
+		} catch (GLib.Error e) {
+			printerr ("\nFAIL: %s\n\n", e.message);
+		}
+
+		yield h.process_events ();
+		h.done ();
+	}
+
 	private async void xnu_hooks_its_own_process_in_live_guest (Harness h,
 			BareboneConfig? config) {
 		if (config == null)
@@ -1574,6 +1722,233 @@ namespace Frida.BareboneTest {
 		} catch (GLib.Error e) {
 			assert_not_reached ();
 		}
+	}
+
+	private async void enumerate_ranges_walks_short_descriptor_tables (Harness h) {
+		var target = new FakeTarget (ARM, short_descriptor_page_tables (), null, HIDE_CONTROL_REGISTERS,
+			arm_short_descriptor_state ());
+		try {
+			yield target.open ();
+			var machine = new Barebone.ArmMachine (target.client);
+
+			var ranges = yield collect_ranges (machine, Gum.PageProtection.READ);
+
+			assert_true (ranges.size == 5);
+
+			assert_range (ranges[0], 0x00000000, 0x00100000, 0x1000, READ | WRITE | EXECUTE);
+			assert_range (ranges[1], 0x00001000, 0x00101000, 0x1000, READ | WRITE);
+			assert_range (ranges[2], 0x00010000, 0x00110000, 0x10000, READ | WRITE | EXECUTE);
+			assert_range (ranges[3], 0x00100000, 0x00800000, 0x100000, READ | WRITE | EXECUTE);
+			assert_range (ranges[4], 0x00200000, 0x00900000, 0x100000, READ);
+		} catch (GLib.Error e) {
+			printerr ("\nFAIL: %s\n", e.message);
+			assert_not_reached ();
+		} finally {
+			target.stop ();
+		}
+
+		h.done ();
+	}
+
+	private async void arm_enumerate_ranges_honors_protection_filter (Harness h) {
+		var target = new FakeTarget (ARM, short_descriptor_page_tables (), null, HIDE_CONTROL_REGISTERS,
+			arm_short_descriptor_state ());
+		try {
+			yield target.open ();
+			var machine = new Barebone.ArmMachine (target.client);
+
+			var ranges = yield collect_ranges (machine, Gum.PageProtection.EXECUTE);
+
+			assert_true (ranges.size == 3);
+
+			assert_range (ranges[0], 0x00000000, 0x00100000, 0x1000, READ | WRITE | EXECUTE);
+			assert_range (ranges[1], 0x00010000, 0x00110000, 0x10000, READ | WRITE | EXECUTE);
+			assert_range (ranges[2], 0x00100000, 0x00800000, 0x100000, READ | WRITE | EXECUTE);
+		} catch (GLib.Error e) {
+			printerr ("\nFAIL: %s\n", e.message);
+			assert_not_reached ();
+		} finally {
+			target.stop ();
+		}
+
+		h.done ();
+	}
+
+	private async void enumerate_ranges_rejects_lpae_tables (Harness h) {
+		var target = new FakeTarget (ARM, short_descriptor_page_tables (), null, HIDE_CONTROL_REGISTERS,
+			arm_lpae_state ());
+		try {
+			yield target.open ();
+			var machine = new Barebone.ArmMachine (target.client);
+
+			try {
+				yield collect_ranges (machine, Gum.PageProtection.READ);
+				assert_not_reached ();
+			} catch (GLib.Error e) {
+				assert_true (e is Error.NOT_SUPPORTED);
+			}
+		} catch (GLib.Error e) {
+			printerr ("\nFAIL: %s\n", e.message);
+			assert_not_reached ();
+		} finally {
+			target.stop ();
+		}
+
+		h.done ();
+	}
+
+	private async void arm_allocate_pages_takes_free_entries (Harness h) {
+		var target = new FakeTarget (ARM, short_descriptor_page_tables (), null, HIDE_CONTROL_REGISTERS,
+			arm_short_descriptor_state ());
+		try {
+			yield target.open ();
+			var machine = new Barebone.ArmMachine (target.client);
+
+			var wanted = new Gee.ArrayList<uint64?> ();
+			wanted.add (0x00300000);
+			wanted.add (0x00301000);
+
+			var allocation = yield machine.allocate_pages (wanted, null);
+
+			assert_true (allocation.virtual_address == 0x00002000);
+			assert_true (allocation.size == 0x2000);
+
+			var ranges = yield collect_ranges (machine, Gum.PageProtection.WRITE);
+			assert_range (ranges[2], 0x00002000, 0x00300000, 0x2000, READ | WRITE | EXECUTE);
+
+			yield allocation.deallocate (null);
+
+			var after = yield collect_ranges (machine, Gum.PageProtection.WRITE);
+			assert_true (after.size == ranges.size - 1);
+		} catch (GLib.Error e) {
+			printerr ("\nFAIL: %s\n", e.message);
+			assert_not_reached ();
+		} finally {
+			target.stop ();
+		}
+
+		h.done ();
+	}
+
+	private async void arm_allocate_pages_spans_leaf_tables (Harness h) {
+		var target = new FakeTarget (ARM, adjacent_arm_leaf_tables (), null, HIDE_CONTROL_REGISTERS,
+			arm_short_descriptor_state ());
+		try {
+			yield target.open ();
+			var machine = new Barebone.ArmMachine (target.client);
+
+			var wanted = new Gee.ArrayList<uint64?> ();
+			for (uint i = 0; i != 4; i++)
+				wanted.add (0x00300000 + (i * 0x1000));
+
+			var allocation = yield machine.allocate_pages (wanted, null);
+
+			assert_true (allocation.virtual_address == 0x000fe000);
+			assert_true (allocation.size == 0x4000);
+
+			var ranges = yield collect_ranges (machine, Gum.PageProtection.WRITE);
+			assert_range (ranges[1], 0x000fe000, 0x00300000, 0x4000, READ | WRITE | EXECUTE);
+
+			yield allocation.deallocate (null);
+
+			var after = yield collect_ranges (machine, Gum.PageProtection.WRITE);
+			assert_true (after.size == ranges.size - 1);
+		} catch (GLib.Error e) {
+			printerr ("
+FAIL: %s
+", e.message);
+			assert_not_reached ();
+		} finally {
+			target.stop ();
+		}
+
+		h.done ();
+	}
+
+	private async void arm_protect_pages_updates_page_entries (Harness h) {
+		var target = new FakeTarget (ARM, short_descriptor_page_tables (), null, HIDE_CONTROL_REGISTERS,
+			arm_short_descriptor_state ());
+		try {
+			yield target.open ();
+			var machine = new Barebone.ArmMachine (target.client);
+
+			yield machine.protect_pages (0x00000000, 0x1000, READ | EXECUTE, null);
+
+			var ranges = yield collect_ranges (machine, Gum.PageProtection.READ);
+			assert_range (ranges[0], 0x00000000, 0x00100000, 0x1000, READ | EXECUTE);
+
+			yield machine.protect_pages (0x00001000, 0x1000, READ, null);
+
+			ranges = yield collect_ranges (machine, Gum.PageProtection.READ);
+			assert_range (ranges[1], 0x00001000, 0x00101000, 0x1000, READ);
+		} catch (GLib.Error e) {
+			printerr ("\nFAIL: %s\n", e.message);
+			assert_not_reached ();
+		} finally {
+			target.stop ();
+		}
+
+		h.done ();
+	}
+
+	private async void arm_protect_pages_rejects_sections (Harness h) {
+		var target = new FakeTarget (ARM, short_descriptor_page_tables (), null, HIDE_CONTROL_REGISTERS,
+			arm_short_descriptor_state ());
+		try {
+			yield target.open ();
+			var machine = new Barebone.ArmMachine (target.client);
+
+			yield machine.protect_pages (0x00100000, 0x1000, READ, null);
+
+			try {
+				yield machine.protect_pages (0x00200000, 0x1000, READ | WRITE, null);
+				assert_not_reached ();
+			} catch (GLib.Error e) {
+				assert_true (e is Error.NOT_SUPPORTED);
+			}
+		} catch (GLib.Error e) {
+			printerr ("\nFAIL: %s\n", e.message);
+			assert_not_reached ();
+		} finally {
+			target.stop ();
+		}
+
+		h.done ();
+	}
+
+	private async void arm_relocations_apply_load_bias (Harness h) {
+		var target = new FakeTarget (ARM, short_descriptor_page_tables (), null, HIDE_CONTROL_REGISTERS,
+			arm_short_descriptor_state ());
+		try {
+			yield target.open ();
+			var machine = new Barebone.ArmMachine (target.client);
+
+			var buf = target.client.make_buffer_builder ()
+				.append_uint32 (0x1000)
+				.append_uint32 (0x2000)
+				.build ();
+			var relocated = target.client.make_buffer (buf);
+
+			var relative = Gum.ElfRelocationDetails ();
+			relative.address = 0;
+			relative.type = Gum.ElfArmRelocation.RELATIVE;
+			machine.apply_relocation (relative, 0x40000000, relocated);
+
+			var absolute = Gum.ElfRelocationDetails ();
+			absolute.address = 4;
+			absolute.type = Gum.ElfArmRelocation.ABS32;
+			machine.apply_relocation (absolute, 0x40000000, relocated);
+
+			assert_true (relocated.read_uint32 (0) == 0x40001000);
+			assert_true (relocated.read_uint32 (4) == 0x40002000);
+		} catch (GLib.Error e) {
+			printerr ("\nFAIL: %s\n", e.message);
+			assert_not_reached ();
+		} finally {
+			target.stop ();
+		}
+
+		h.done ();
 	}
 
 	private async void enumerate_ranges_walks_legacy_tables (Harness h) {
@@ -2013,6 +2388,46 @@ namespace Frida.BareboneTest {
 	 * 4 MiB pages; PAE and NX remain the fake stub's job.
 	 */
 	namespace QEMU {
+		private async void walk_finds_the_arm_kernel (SlowHarness h) {
+			QemuGuest? guest = null;
+			try {
+				string? unavailable_reason = yield QemuGuest.check_availability (ARM);
+				if (unavailable_reason != null) {
+					stdout.printf ("<skipping: %s> ", unavailable_reason);
+					h.done ();
+					return;
+				}
+
+				guest = yield QemuGuest.boot (ARM);
+				assert_true (guest != null);
+
+				var machine = new Barebone.ArmMachine (guest.client);
+
+				var ranges = yield collect_ranges (machine, Gum.PageProtection.READ);
+				assert_true (ranges.size != 0);
+
+				uint64 pc = yield guest.client.exception.thread.read_register ("pc", null);
+				Barebone.RangeDetails? parked_in = find_range_containing (ranges, pc);
+				assert_true (parked_in != null);
+				assert_true ((parked_in.protection & Gum.PageProtection.EXECUTE) != 0);
+
+				foreach (Barebone.RangeDetails r in ranges) {
+					assert_true (r.size != 0);
+					assert_true (r.size % 4096 == 0);
+					assert_true (r.base_va % 4096 == 0);
+					assert_true (r.base_pa % 4096 == 0);
+				}
+			} catch (GLib.Error e) {
+				printerr ("\nFAIL: %s\n", e.message);
+				assert_not_reached ();
+			} finally {
+				if (guest != null)
+					guest.stop ();
+			}
+
+			h.done ();
+		}
+
 		private async void walk_matches_x86_guest (SlowHarness h) {
 			yield walk_matches_guest (h, X86);
 		}
@@ -2280,13 +2695,15 @@ namespace Frida.BareboneTest {
 			h.done ();
 		}
 
+		private const uint64 ARM_RAM_BASE = 0x40000000U;
+
 		private const uint32 MARKER_VALUE = 0xdeadbeefU;
 
 		private Barebone.Allocator make_scratch_allocator (Barebone.Machine machine,
-				uint mb_below_top = 1) {
+				uint mb_below_top = 1, uint64 ram_base = 0) {
 			var config = new BarebonePhysicalAllocatorConfig ();
 			config.physical_base = new BareboneNonNullMemoryAddress ("scratch",
-				((uint64) (QemuGuest.MEMORY_SIZE_IN_MB - mb_below_top)) << 20);
+				ram_base + (((uint64) (QemuGuest.MEMORY_SIZE_IN_MB - mb_below_top)) << 20));
 			return new Barebone.PhysicalAllocator (machine, 4096, config);
 		}
 
@@ -2355,6 +2772,70 @@ namespace Frida.BareboneTest {
 
 		private string marker_path () {
 			return Path.build_filename (TESTS_SRCDIR, "..", "src", "barebone", "helpers", "marker-x86.elf");
+		}
+
+		private async void whole_agent_loads_into_arm_guest (SlowHarness h) {
+			string? agent_path = Environment.get_variable ("FRIDA_BAREBONE_AGENT_ARM");
+			if (agent_path == null) {
+				stdout.printf ("<skipping: set FRIDA_BAREBONE_AGENT_ARM to an agent blob> ");
+				h.done ();
+				return;
+			}
+
+			QemuGuest? guest = null;
+			try {
+				string? unavailable_reason = yield QemuGuest.check_availability (ARM);
+				if (unavailable_reason != null) {
+					stdout.printf ("<skipping: %s> ", unavailable_reason);
+					h.done ();
+					return;
+				}
+
+				guest = yield QemuGuest.boot (ARM);
+
+				var machine = new Barebone.ArmMachine (guest.client);
+				Barebone.Allocator allocator = make_scratch_allocator (machine, 32, ARM_RAM_BASE);
+
+				var elf = new Gum.ElfModule.from_file (agent_path);
+				size_t page_size = yield machine.query_page_size (null);
+
+				var timer = new Timer ();
+				Barebone.Allocation image = yield Barebone.inject_elf (elf, new Bytes (elf.get_file_data ()),
+					page_size, machine, allocator, null);
+				stdout.printf ("<%u KiB in %.1fs> ", (uint) (image.size / 1024), timer.elapsed ());
+
+				uint64 base_va = image.virtual_address;
+				assert_true (base_va != 0);
+				assert_true (image.size >= elf.mapped_size);
+
+				uint64 start = 0;
+				elf.enumerate_symbols (e => {
+					if (e.name == "_start")
+						start = base_va + e.address;
+					return true;
+				});
+				assert_true (start != 0);
+
+				assert_true ((start & 1) != 0);
+
+				Buffer entry = yield guest.client.read_buffer (start & ~((uint64) 1), 16, null);
+				bool entry_populated = false;
+				for (uint i = 0; i != 16; i++)
+					entry_populated |= entry.read_uint8 (i) != 0;
+				assert_true (entry_populated);
+
+				yield guest.client.read_buffer (base_va + image.size - 16, 16, null);
+			} catch (GLib.Error e) {
+				printerr ("
+FAIL: %s
+", e.message);
+				assert_not_reached ();
+			} finally {
+				if (guest != null)
+					guest.stop ();
+			}
+
+			h.done ();
 		}
 
 		private async void whole_agent_loads_into_x86_guest (SlowHarness h) {
@@ -3787,6 +4268,105 @@ namespace Frida.BareboneTest {
 		} catch (GLib.Error e) {
 			printerr ("\nFAIL: %s\n\n", e.message);
 			assert_not_reached ();
+		}
+
+		h.done ();
+	}
+
+	private async void linux_agent_runs_in_live_guest (Harness h, string prefix) {
+		yield run_script_in_live_guest (h, linux_config_from_environment (h, prefix), "send(1 + 1);",
+			"\"payload\":2");
+	}
+
+	private async void linux_enumerates_processes_in_live_guest (Harness h, string prefix) {
+		var config = linux_config_from_environment (h, prefix);
+		if (config == null)
+			return;
+
+		var manager = new DeviceManager ();
+		try {
+			var device = yield manager.add_barebone_device (config);
+			var options = new ProcessQueryOptions ();
+			options.scope = FULL;
+			var processes = yield device.enumerate_processes (options, null);
+
+			assert_true (processes.size () != 0);
+
+			Process? init = null;
+			for (int i = 0; i != processes.size (); i++) {
+				var process = processes.get (i);
+				assert_true (process.name != "");
+				if (process.pid == 1)
+					init = process;
+			}
+			assert_nonnull (init);
+		} catch (GLib.Error e) {
+			printerr ("
+FAIL: %s
+
+", e.message);
+			assert_not_reached ();
+		}
+
+		yield manager.close (null);
+
+		h.done ();
+	}
+
+	private async void linux_injects_into_process_in_live_guest (Harness h, string prefix) {
+		var config = linux_config_from_environment (h, prefix);
+		if (config == null)
+			return;
+
+		var manager = new DeviceManager ();
+		try {
+			var device = yield manager.add_barebone_device (config);
+
+			uint pid = yield find_program (device, "busybox");
+			if (pid == 0) {
+				var options = new ProcessQueryOptions ();
+				options.scope = METADATA;
+				var processes = yield device.enumerate_processes (options, null);
+				var seen = new StringBuilder ();
+				for (int i = 0; i != processes.size (); i++) {
+					var p = processes.get (i);
+					var path = p.parameters["path"];
+					seen.append_printf ("\n  %u %s %s", p.pid, p.name,
+						(path != null) ? path.get_string () : "(no path)");
+				}
+				printerr ("\nNo busybox among:%s\n\n", seen.str);
+			}
+			assert_true (pid != 0);
+
+			var session = yield device.attach (pid, null, null);
+			assert_nonnull (session);
+
+			var script = yield session.create_script ("""
+				recv('ping', () => { send(Process.id >>> 0); });
+				send('ready');
+			""", null, null);
+
+			var messages = new Gee.ArrayList<string> ();
+			script.message.connect ((json, data) => {
+				messages.add (json);
+			});
+			yield script.load (null);
+			while (messages.size < 1)
+				yield h.process_events ();
+			assert_true (messages[0].contains ("ready"));
+
+			script.post ("""{"type":"ping"}""");
+			while (messages.size < 2)
+				yield h.process_events ();
+			assert_true (messages[1].contains (pid.to_string ()));
+		} catch (GLib.Error e) {
+			printerr ("\nFAIL: %s\n\n", e.message);
+			assert_not_reached ();
+		} finally {
+			try {
+				yield manager.close (null);
+			} catch (GLib.Error e) {
+			}
 		}
 
 		h.done ();
@@ -5247,6 +5827,40 @@ namespace Frida.BareboneTest {
 		return config;
 	}
 
+	private BareboneConfig? linux_config_from_environment (Frida.Test.AsyncHarness h, string prefix) {
+		string? agent_path = Environment.get_variable (@"FRIDA_TEST_$(prefix)_AGENT");
+		string? qmp_path = Environment.get_variable (@"FRIDA_TEST_$(prefix)_QMP");
+		string? stub_port = Environment.get_variable (@"FRIDA_TEST_$(prefix)_GDB_PORT");
+		string? system_map = Environment.get_variable (@"FRIDA_TEST_$(prefix)_SYSTEM_MAP");
+		if (agent_path == null || qmp_path == null || stub_port == null || system_map == null) {
+			h.done ();
+			return null;
+		}
+
+		var config = new BareboneConfig ();
+		config.connection.host = "127.0.0.1";
+		config.connection.port = (uint16) uint.parse (stub_port);
+		config.kernel = LINUX;
+		config.image = new BareboneImageConfig () {
+			file = system_map,
+		};
+		string? ecam = Environment.get_variable (@"FRIDA_TEST_$(prefix)_ECAM");
+		string? mmio = Environment.get_variable (@"FRIDA_TEST_$(prefix)_MMIO");
+		string? irq = Environment.get_variable (@"FRIDA_TEST_$(prefix)_IRQ");
+		config.agent = new BareboneAgentConfig () {
+			path = agent_path,
+			transport = new BareboneHostlinkTransportConfig () {
+				qmp = "unix:" + qmp_path,
+				bus = Environment.get_variable (@"FRIDA_TEST_$(prefix)_BUS"),
+				ecam = (ecam != null) ? uint64.parse (ecam) : 0,
+				mmio = (mmio != null) ? uint64.parse (mmio) : 0,
+				irq = (irq != null) ? (uint) uint64.parse (irq) : 0,
+			},
+		};
+
+		return config;
+	}
+
 	// The same guest is described the same way whatever its word size, so the two differ only in
 	// which set of variables names it.
 	private BareboneConfig? winnt_config_from_environment (Frida.Test.AsyncHarness h, string prefix) {
@@ -5536,6 +6150,51 @@ namespace Frida.BareboneTest {
 		put_uint32 (image, PE_HEADERS_OFFSET + 0x7c, export_directory_size);
 	}
 
+	private const uint64 ARM_TT0_PA = 0x0000;
+	private const uint64 ARM_L2_PA = 0x4000;
+
+	private uint8[] short_descriptor_page_tables () {
+		var ram = new Ram ();
+
+		ram.write_uint32 (ARM_TT0_PA + (0 * 4), (uint32) ARM_L2_PA | 0x1);
+		ram.write_uint32 (ARM_TT0_PA + (1 * 4), 0x00800000 | (3 << 10) | 0x2);
+		ram.write_uint32 (ARM_TT0_PA + (2 * 4), 0x00900000 | (1 << 10) | (1 << 15) | (1 << 4) | 0x2);
+
+		ram.write_uint32 (ARM_L2_PA + (0 * 4), 0x00100000 | (3 << 4) | 0x2);
+		ram.write_uint32 (ARM_L2_PA + (1 * 4), 0x00101000 | (3 << 4) | 0x3);
+		ram.write_uint32 (ARM_L2_PA + (16 * 4), 0x00110000 | (3 << 4) | 0x1);
+
+		return ram.steal ();
+	}
+
+	private ArmSystemState arm_short_descriptor_state () {
+		return new ArmSystemState (0x00c5387d, 0, ARM_TT0_PA, ARM_TT0_PA);
+	}
+
+	private ArmSystemState arm_lpae_state () {
+		return new ArmSystemState (0x00c5387d, 0x80000000, ARM_TT0_PA, ARM_TT0_PA);
+	}
+
+	private const uint64 ARM_SPAN_L2_0_PA = 0x4400;
+	private const uint64 ARM_SPAN_L2_1_PA = 0x4800;
+	private const uint ARM_L2_ENTRIES = 256;
+	private const uint ARM_SPAN_FREE_IN_FIRST = 2;
+
+	private uint8[] adjacent_arm_leaf_tables () {
+		var ram = new Ram ();
+
+		ram.write_uint32 (ARM_TT0_PA + (0 * 4), (uint32) ARM_SPAN_L2_0_PA | 0x1);
+		ram.write_uint32 (ARM_TT0_PA + (1 * 4), (uint32) ARM_SPAN_L2_1_PA | 0x1);
+
+		uint occupied = ARM_L2_ENTRIES - ARM_SPAN_FREE_IN_FIRST;
+		for (uint i = 0; i != occupied; i++) {
+			ram.write_uint32 (ARM_SPAN_L2_0_PA + (i * 4),
+				(uint32) (0x00100000 + (i * 0x1000)) | (3 << 4) | 0x2);
+		}
+
+		return ram.steal ();
+	}
+
 	private uint8[] legacy_page_tables () {
 		var ram = new Ram ();
 
@@ -5646,7 +6305,22 @@ namespace Frida.BareboneTest {
 
 	private enum TargetArch {
 		IA32,
-		X64
+		X64,
+		ARM
+	}
+
+	private class ArmSystemState {
+		public uint64 sctlr;
+		public uint64 ttbcr;
+		public uint64 ttbr0;
+		public uint64 ttbr1;
+
+		public ArmSystemState (uint64 sctlr, uint64 ttbcr, uint64 ttbr0, uint64 ttbr1) {
+			this.sctlr = sctlr;
+			this.ttbcr = ttbcr;
+			this.ttbr0 = ttbr0;
+			this.ttbr1 = ttbr1;
+		}
 	}
 
 	private enum ControlRegisterExposure {
@@ -5669,6 +6343,7 @@ namespace Frida.BareboneTest {
 		private Gee.List<Region> regions = new Gee.ArrayList<Region> ();
 		private string? monitor_dump;
 		private ControlRegisterExposure exposure;
+		private ArmSystemState? arm_state;
 
 		private class Region {
 			public uint64 address;
@@ -5701,17 +6376,43 @@ namespace Frida.BareboneTest {
 			"<reg name=\"rsp\" bitsize=\"64\" regnum=\"7\"/>" +
 			"<reg name=\"rip\" bitsize=\"64\" regnum=\"8\"/>";
 
+		private const string ARM_CORE_REGISTERS =
+			"<reg name=\"r0\" bitsize=\"32\" regnum=\"0\"/>" +
+			"<reg name=\"r1\" bitsize=\"32\" regnum=\"1\"/>" +
+			"<reg name=\"r2\" bitsize=\"32\" regnum=\"2\"/>" +
+			"<reg name=\"r3\" bitsize=\"32\" regnum=\"3\"/>" +
+			"<reg name=\"r4\" bitsize=\"32\" regnum=\"4\"/>" +
+			"<reg name=\"r5\" bitsize=\"32\" regnum=\"5\"/>" +
+			"<reg name=\"r6\" bitsize=\"32\" regnum=\"6\"/>" +
+			"<reg name=\"r7\" bitsize=\"32\" regnum=\"7\"/>" +
+			"<reg name=\"r8\" bitsize=\"32\" regnum=\"8\"/>" +
+			"<reg name=\"r9\" bitsize=\"32\" regnum=\"9\"/>" +
+			"<reg name=\"r10\" bitsize=\"32\" regnum=\"10\"/>" +
+			"<reg name=\"r11\" bitsize=\"32\" regnum=\"11\"/>" +
+			"<reg name=\"r12\" bitsize=\"32\" regnum=\"12\"/>" +
+			"<reg name=\"sp\" bitsize=\"32\" regnum=\"13\"/>" +
+			"<reg name=\"lr\" bitsize=\"32\" regnum=\"14\"/>" +
+			"<reg name=\"pc\" bitsize=\"32\" regnum=\"15\"/>" +
+			"<reg name=\"cpsr\" bitsize=\"32\" regnum=\"16\"/>";
+
+		private const string ARM_SYSTEM_REGISTERS =
+			"<reg name=\"TTBCR\" bitsize=\"32\" regnum=\"17\"/>" +
+			"<reg name=\"TTBR0\" bitsize=\"32\" regnum=\"18\"/>" +
+			"<reg name=\"TTBR1\" bitsize=\"32\" regnum=\"19\"/>" +
+			"<reg name=\"SCTLR\" bitsize=\"32\" regnum=\"20\"/>";
+
 		private const string CONTROL_REGISTERS =
 			"<reg name=\"cr0\" bitsize=\"32\" regnum=\"10\"/>" +
 			"<reg name=\"cr3\" bitsize=\"32\" regnum=\"11\"/>" +
 			"<reg name=\"cr4\" bitsize=\"32\" regnum=\"12\"/>";
 
 		public FakeTarget (TargetArch arch, owned uint8[] ram, string? monitor_dump,
-				ControlRegisterExposure exposure = HIDE_CONTROL_REGISTERS) {
+				ControlRegisterExposure exposure = HIDE_CONTROL_REGISTERS, ArmSystemState? arm_state = null) {
 			this.arch = arch;
 			this.ram = (owned) ram;
 			this.monitor_dump = monitor_dump;
 			this.exposure = exposure;
+			this.arm_state = arm_state;
 		}
 
 		public async void open () throws Error, IOError {
@@ -5811,6 +6512,19 @@ namespace Frida.BareboneTest {
 		}
 
 		private string target_xml () {
+			if (arch == ARM) {
+				return "<?xml version=\"1.0\"?>" +
+					"<target version=\"1.0\">" +
+					"<architecture>arm</architecture>" +
+					"<feature name=\"org.gnu.gdb.arm.core\">" +
+					ARM_CORE_REGISTERS +
+					"</feature>" +
+					"<feature name=\"org.qemu.gdb.arm.sys.regs\">" +
+					ARM_SYSTEM_REGISTERS +
+					"</feature>" +
+					"</target>";
+			}
+
 			var registers = new StringBuilder ((arch == X64) ? X64_CORE_REGISTERS : IA32_CORE_REGISTERS);
 			if (exposure == EXPOSE_CONTROL_REGISTERS)
 				registers.append (CONTROL_REGISTERS);
@@ -5826,6 +6540,32 @@ namespace Frida.BareboneTest {
 
 		private string read_register (string request) {
 			uint regnum = uint.parse (request[1:].split (";")[0], 16);
+
+			if (arch == ARM) {
+				uint64 arm_val = 0;
+				switch (regnum) {
+					case 17:
+						arm_val = arm_state.ttbcr;
+						break;
+					case 18:
+						arm_val = arm_state.ttbr0;
+						break;
+					case 19:
+						arm_val = arm_state.ttbr1;
+						break;
+					case 20:
+						arm_val = arm_state.sctlr;
+						break;
+					default:
+						break;
+				}
+
+				var arm_result = new StringBuilder ();
+				for (uint i = 0; i != 4; i++)
+					arm_result.append_printf ("%02x", (uint8) (arm_val >> (i * 8)));
+				return arm_result.str;
+			}
+
 			uint num_core_registers = (arch == X64) ? 9 : 10;
 			size_t width = (arch == X64) ? 8 : 4;
 
@@ -6010,10 +6750,18 @@ namespace Frida.BareboneTest {
 
 	private enum GuestArch {
 		X86,
-		X86_64;
+		X86_64,
+		ARM;
 
 		public string to_nick () {
-			return (this == X86) ? "x86" : "x86_64";
+			switch (this) {
+				case X86:
+					return "x86";
+				case X86_64:
+					return "x86_64";
+				default:
+					return "arm";
+			}
 		}
 	}
 

@@ -268,16 +268,25 @@ namespace Frida.Barebone {
 			var config_blob = config_builder.end ().get_data_as_bytes ();
 			config_allocation = yield allocator.allocate (config_blob.get_size (), 8, cancellable);
 
-			yield gdb.write_byte_array (config_allocation.virtual_address, config_blob, cancellable);
+			yield machine.write_virtual (config_allocation.virtual_address, config_blob.get_data (),
+				cancellable);
 
 			yield machine.protect_pages (config_allocation.virtual_address, config_allocation.size, READ | WRITE,
 				cancellable);
+
+			var ia32 = machine as IA32Machine;
+			uint kernel_arguments = (ia32 != null) ? ia32.arguments_in_registers : 0;
+			if (ia32 != null)
+				ia32.arguments_in_registers = 0;
 
 			yield machine.invoke (start_address, {
 					config_allocation.virtual_address,
 					config_allocation.size
 				},
 				cancellable);
+
+			if (ia32 != null)
+				ia32.arguments_in_registers = kernel_arguments;
 
 			yield flavor.settle (cancellable);
 			if (qmp != null)
@@ -335,6 +344,9 @@ namespace Frida.Barebone {
 			this.qmp = qmp;
 			adopt_hostlink_streams (link.connection);
 
+			if (config.mmio != 0)
+				return describe_virtio (config.mmio, config.irq);
+
 			if (config.bus != null) {
 				Variant[] pci_cfg = { new Variant.uint64 (config.ecam) };
 				return new Variant.tuple ({
@@ -343,7 +355,11 @@ namespace Frida.Barebone {
 				});
 			}
 
-			Variant[] virtio_cfg = { new Variant.uint64 (link.mmio), new Variant.uint32 (link.irq) };
+			return describe_virtio (link.mmio, link.irq);
+		}
+
+		private Variant describe_virtio (uint64 mmio, uint irq) {
+			Variant[] virtio_cfg = { new Variant.uint64 (mmio), new Variant.uint32 (irq) };
 			return new Variant.tuple ({
 				new Variant.byte (TRANSPORT_KIND_VIRTIO),
 				new Variant.variant (new Variant.tuple (virtio_cfg))
@@ -878,7 +894,7 @@ namespace Frida.Barebone {
 			timeout_source.set_callback (() => {
 				Promise<Variant>? p;
 				if (pending_requests.unset (request_id, out p))
-					p.reject (new Error.TIMED_OUT ("%s timed out", command.to_string ()));
+					p.reject (new Error.TIMED_OUT ("The %s command timed out", command.to_nick ()));
 				return Source.REMOVE;
 			});
 			timeout_source.attach (MainContext.get_thread_default ());
@@ -1021,7 +1037,9 @@ namespace Frida.Barebone {
 		}
 
 		private async Variant remap_writable_pages (Variant payload, Cancellable? cancellable) throws Error, IOError {
-			var arm64 = (Arm64Machine) machine;
+			var arm64 = machine as Arm64Machine;
+			if (arm64 == null)
+				throw new Error.NOT_SUPPORTED ("Remapping writable pages is only implemented for arm64");
 			var physical_addresses = new Gee.ArrayList<uint64?> ();
 			for (size_t i = 0; i != payload.n_children (); i++) {
 				uint64 va = payload.get_child_value (i).get_uint64 ();
@@ -1049,7 +1067,9 @@ namespace Frida.Barebone {
 		// even through a writable alias. The physical-memory bridge writes the backing store directly,
 		// which the lock does not cover, letting us land hooks in kernel and kext text.
 		private async Variant patch_code (Variant payload, Cancellable? cancellable) throws Error, IOError {
-			var arm64 = (Arm64Machine) machine;
+			var arm64 = machine as Arm64Machine;
+			if (arm64 == null)
+				throw new Error.NOT_SUPPORTED ("Patching code through physical memory is only implemented for arm64");
 			uint64 va;
 			Variant bytes_value;
 			payload.get ("(t@ay)", out va, out bytes_value);
@@ -1128,7 +1148,11 @@ namespace Frida.Barebone {
 			ENUMERATE_SHORTCUTS = 19,
 			REPLY = 128,
 			SCRIPT_MESSAGE = 129,
-			SPAWN_ADDED = 130
+			SPAWN_ADDED = 130;
+
+			public string to_nick () {
+				return Marshal.enum_to_nick<Command> (this);
+			}
 		}
 
 		private enum Status {

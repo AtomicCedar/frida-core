@@ -73,6 +73,7 @@ fn main() {
         };
         let arch = match target.split('-').next().unwrap() {
             "i686" => "x86",
+            "armv7a" => "arm",
             "aarch64" => "arm64",
             other => other,
         };
@@ -83,11 +84,84 @@ fn main() {
         // references the entrypoint the host calls; keep the linker from
         // dropping it along with the rest of the unreferenced archive members.
         println!("cargo:rustc-link-arg=--undefined=_start");
+
+        let note = compile_version_note(&out_dir, cc, &cc_args, arch);
+        println!("cargo:rustc-link-arg={}", note.to_string_lossy());
+    }
+
+    if target.starts_with("i686") && env::var("CARGO_FEATURE_LINUX_INJECTED").is_ok() {
+        let shim = out_dir.join("regparm.o");
+        let status = Command::new(cc)
+            .args(&cc_args)
+            .args(["-m32", "-c", "-O2", "-fPIC", "-ffreestanding", "-o"])
+            .arg(&shim)
+            .arg("src/linux/regparm.c")
+            .status()
+            .expect("Couldn't run the compiler");
+        assert!(status.success(), "Couldn't compile the kernel-call shim");
+
+        println!("cargo:rustc-link-arg={}", shim.to_string_lossy());
+        println!("cargo:rerun-if-changed=src/linux/regparm.c");
     }
 
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-env-changed=GUMJS_DEVKIT_DIR");
+    println!("cargo:rerun-if-env-changed=FRIDA_VERSION");
     println!("cargo:rerun-if-changed={}", devkit_dir.join("frida-gumjs.h").display());
+}
+
+fn compile_version_note(out_dir: &Path, cc: &Path, cc_args: &[&str], arch: &str) -> PathBuf {
+    let version = env::var("FRIDA_VERSION")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| "0.0.0".to_string());
+    let payload = format!(
+        "{{\"type\":\"frida\",\"name\":\"frida-barebone-agent\",\
+         \"version\":\"{version}\",\"architecture\":\"{arch}\"}}"
+    );
+
+    let source = out_dir.join("version-note.S");
+    fs::write(
+        &source,
+        format!(
+            ".section .note.package,\"\",%note\n\
+             .balign 4\n\
+             .long 2f - 1f\n\
+             .long 4f - 3f\n\
+             .long 0xcafe1a7e\n\
+             1: .asciz \"FDO\"\n\
+             2: .balign 4\n\
+             3: .asciz {payload:?}\n\
+             4: .balign 4\n"
+        ),
+    )
+    .expect("Couldn't write the version note");
+
+    let object = out_dir.join("version-note.o");
+    let status = Command::new(cc)
+        .args(cc_args)
+        .args(["-target", &llvm_target(), "-c", "-o"])
+        .arg(&object)
+        .arg(&source)
+        .status()
+        .expect("Couldn't run the compiler");
+    assert!(status.success(), "Couldn't assemble the version note");
+
+    object
+}
+
+fn llvm_target() -> String {
+    let target = env::var("TARGET").unwrap();
+    let spec = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap()).join(format!("{target}.json"));
+    let text = fs::read_to_string(&spec).expect("Couldn't read the target specification");
+
+    let key = "\"llvm-target\"";
+    let at = text.find(key).expect("Target specification names no LLVM target");
+    let rest = &text[at + key.len()..];
+    let open = rest.find('"').unwrap() + 1;
+    let close = open + rest[open..].find('"').unwrap();
+
+    rest[open..close].to_string()
 }
 
 pub fn detect_gcc_include_paths(gcc: &Path, args: &[&str]) -> Vec<PathBuf> {

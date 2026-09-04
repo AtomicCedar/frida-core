@@ -3,11 +3,13 @@
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import shlex
 import shutil
 import socket
 import subprocess
+import threading
 import sys
 import tempfile
 import time
@@ -16,7 +18,8 @@ import urllib.request
 
 
 def main():
-    if len(sys.argv) >= 2 and sys.argv[1].split("-", maxsplit=1)[0] in ("check", "boot", "rewind"):
+    if len(sys.argv) >= 2 and sys.argv[1].split("-", maxsplit=1)[0] in ("check", "boot", "rewind",
+                                                                       "live", "livecheck"):
         parser = argparse.ArgumentParser()
         subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -28,6 +31,18 @@ def main():
                                          help=f"boot a minimal {arch} guest with the GDB stub enabled")
             boot.add_argument("--gdb-port", type=int, required=True)
             boot.add_argument("--memory", type=int, default=256)
+
+            subparsers.add_parser(f"livecheck-{arch}",
+                                  help=f"verify that a live {arch} guest can be booted, fetching what it needs")
+
+            live = subparsers.add_parser(f"live-{arch}",
+                                         help=f"boot a live {arch} guest with userspace, the GDB stub and a "
+                                              "hostlink")
+            live.add_argument("--gdb-port", type=int, required=True)
+            live.add_argument("--memory", type=int, default=256)
+            live.add_argument("--socket", type=Path, required=True)
+            live.add_argument("--qmp", type=Path, required=True)
+            live.add_argument("--console-commands", type=Path)
 
         for name, guest in WINDOWS_GUESTS.items():
             check = subparsers.add_parser(f"check-{name}",
@@ -79,6 +94,10 @@ def main():
                 rewind_windows_guest(args)
             else:
                 boot_windows_guest(WINDOWS_GUESTS[target], args)
+        elif action == "livecheck":
+            check_live_guest(target)
+        elif action == "live":
+            boot_live_guest(target, args)
         elif action == "check":
             check_guest(target)
         else:
@@ -130,11 +149,18 @@ def boot_guest(arch: str, args):
     qemu = require_qemu(guest)
     kernel = fetch_kernel(guest)
 
+    machine_arguments = []
+    if guest.machine != "":
+        machine_arguments += ["-machine", guest.machine]
+    if guest.cpu != "":
+        machine_arguments += ["-cpu", guest.cpu]
+
     process = subprocess.Popen([
         qemu,
         "-m", str(args.memory),
+    ] + machine_arguments + [
         "-kernel", str(kernel),
-        "-append", "console=ttyS0 panic=0",
+        "-append", f"console={guest.console} panic=0",
         "-display", "none",
         "-serial", "stdio",
         "-monitor", "none",
@@ -154,6 +180,117 @@ def boot_guest(arch: str, args):
         raise Unavailable("guest exited before it finished booting")
     finally:
         process.kill()
+
+
+def check_live_guest(arch: str):
+    guest = GUESTS[arch]
+    if guest.ramdisk_url == "":
+        raise Unavailable(f"no ramdisk is published for {arch}")
+    require_qemu(guest)
+    fetch_kernel(guest)
+    fetch_ramdisk(guest)
+    fetch_system_map(guest)
+    print("ok")
+
+
+def boot_live_guest(arch: str, args):
+    """
+    Boot the same stock kernel the quiescent guest uses, but hand it the ramdisk the
+    distribution ships beside it: an injected agent needs a scheduler to run on and processes
+    to find, neither of which a kernel parked on a panic has. Nothing is there for that
+    ramdisk to mount, so it drops to its recovery shell, which is userspace enough.
+
+    The GDB stub puts the agent in and the hostlink carries its RPC. What the guest cannot be
+    asked for goes out on stdout ahead of readiness: the System.map naming the kernel's
+    symbols, and where its configuration space is mapped.
+    """
+    guest = GUESTS[arch]
+    qemu = require_qemu(guest)
+    kernel = fetch_kernel(guest)
+    ramdisk = fetch_ramdisk(guest)
+    system_map = fetch_system_map(guest)
+
+    machine_arguments = []
+    if guest.live_machine != "":
+        machine_arguments += ["-machine", guest.live_machine]
+    if guest.cpu != "":
+        machine_arguments += ["-cpu", guest.cpu]
+
+    process = subprocess.Popen([
+        qemu,
+        "-m", str(args.memory),
+    ] + machine_arguments + [
+        "-kernel", str(kernel),
+        "-initrd", str(ramdisk),
+        "-append", f"console={guest.console} panic=-1 {guest.live_cmdline}".rstrip(),
+        "-display", "none",
+        "-serial", "stdio",
+        "-monitor", "none",
+        "-no-reboot",
+        "-qmp", f"unix:{args.qmp},server=on,wait=off",
+        "-gdb", f"tcp::{args.gdb_port}",
+    ] + hostlink_arguments(guest),
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+
+    if args.console_commands is not None:
+        threading.Thread(target=feed_console, args=(args.console_commands, process), daemon=True).start()
+
+    asked = False
+    ready = False
+    where_it_is = []
+    try:
+        for raw_line in process.stdout:
+            line = raw_line.decode(errors="replace").rstrip()
+            print(line, file=sys.stderr)
+
+            if not asked and LIVE_READY_MARKER in line:
+                asked = True
+                if guest.hostlink == "mmio":
+                    process.stdin.write((WHERE_THE_LINK_IS + "\n").encode())
+                else:
+                    process.stdin.write((LET_THE_LINK_GO + "\n").encode())
+                process.stdin.flush()
+
+            if not ready and LINK_ANSWER_MARKER in line and LINK_GONE_MARKER not in line:
+                fields = line.split(LINK_ANSWER_MARKER, maxsplit=1)[1].split()
+                where_it_is = [f"mmio 0x{fields[0]}", f"irq {fields[1]}"]
+
+                process.stdin.write((LET_THE_LINK_GO + "\n").encode())
+                process.stdin.flush()
+
+            if not ready and LINK_GONE_MARKER in line:
+                ready = True
+
+                print(f"system-map {system_map}", flush=True)
+                for detail in where_it_is:
+                    print(detail, flush=True)
+                print(f"bus {VIRTIO_SERIAL_ID}.0", flush=True)
+                print("ready", flush=True)
+
+        if not ready:
+            raise Unavailable("guest exited before it said where the link is")
+    finally:
+        process.kill()
+
+
+def hostlink_arguments(guest: "Guest") -> [str]:
+    if guest.hostlink == "mmio":
+        return [
+            "-global", "virtio-mmio.force-legacy=false",
+            "-device", f"virtio-serial-device,id={VIRTIO_SERIAL_ID}",
+        ]
+    return ["-device", f"virtio-serial-pci,id={VIRTIO_SERIAL_ID}"]
+
+
+def feed_console(path: Path, process):
+    while process.poll() is None:
+        try:
+            with open(path, "r") as commands:
+                for command in commands:
+                    process.stdin.write(command.encode())
+                    process.stdin.flush()
+        except Exception:
+            return
 
 
 def check_windows_guest(guest: "WindowsGuest", args):
@@ -431,6 +568,48 @@ def fetch_busybox(guest: "Guest") -> Path:
     return fetch_cached(guest, "busybox", BUSYBOX_URL)
 
 
+def fetch_ramdisk(guest: "Guest") -> Path:
+    return fetch_cached(guest, "initramfs-lts", guest.ramdisk_url)
+
+
+def fetch_system_map(guest: "Guest") -> Path:
+    """
+    The map is named after the kernel it describes, which the mirror versions in place, so
+    the directory says which one is being served today.
+    """
+    netboot = guest.kernel_url.rsplit("/", maxsplit=1)[0] + "/"
+    try:
+        with urllib.request.urlopen(netboot, timeout=60) as response:
+            index = response.read().decode(errors="replace")
+    except Exception as e:
+        raise Unavailable(f"unable to list {netboot}: {e}")
+
+    names = sorted(set(re.findall(r'System\.map-[0-9][^"<]*-lts', index)))
+    if not names:
+        raise Unavailable(f"{netboot} serves no System.map")
+
+    return fetch_cached(guest, names[-1], netboot + names[-1])
+
+
+def fetch_system_map(guest: "Guest") -> Path:
+    """
+    The map is named after the kernel it describes, which the mirror versions in place, so
+    the directory says which one is being served today.
+    """
+    netboot = guest.kernel_url.rsplit("/", maxsplit=1)[0] + "/"
+    try:
+        with urllib.request.urlopen(netboot, timeout=60) as response:
+            index = response.read().decode(errors="replace")
+    except Exception as e:
+        raise Unavailable(f"unable to list {netboot}: {e}")
+
+    names = sorted(set(re.findall(r'System\.map-[0-9][^"<]*-lts', index)))
+    if not names:
+        raise Unavailable(f"{netboot} serves no System.map")
+
+    return fetch_cached(guest, names[-1], netboot + names[-1])
+
+
 def host_kernel() -> Path:
     return Path("/boot") / ("vmlinuz-" + os.uname().release)
 
@@ -507,6 +686,14 @@ class Guest(NamedTuple):
     arch: str
     qemu_binary: str
     kernel_url: str
+    machine: str = ""
+    cpu: str = ""
+    console: str = "ttyS0"
+    ramdisk_url: str = ""
+    live_machine: str = ""
+    ecam: int = 0
+    hostlink: str = "pci"
+    live_cmdline: str = ""
 
 # Paging comes up long before this, so the panic that follows the missing root filesystem is a
 # safely late — and unmistakable — sign that the kernel has finished with its page tables.
@@ -516,12 +703,23 @@ BOOT_COMPLETE_MARKER = "Kernel panic"
 # not versioned in-place, so treat whatever the mirror currently serves as the fixture; the
 # tests only care that it is a Linux kernel that enables paging.
 ALPINE_NETBOOT_URL = "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/{0}/netboot/vmlinuz-lts"
+ALPINE_RAMDISK_URL = "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/{0}/netboot/initramfs-lts"
 
 GUESTS = {
     guest.arch: guest
     for guest in [
-        Guest("x86", "qemu-system-i386", ALPINE_NETBOOT_URL.format("x86")),
-        Guest("x86_64", "qemu-system-x86_64", ALPINE_NETBOOT_URL.format("x86_64")),
+        Guest("x86", "qemu-system-i386", ALPINE_NETBOOT_URL.format("x86"),
+              ramdisk_url=ALPINE_RAMDISK_URL.format("x86"), live_machine="pc",
+              live_cmdline="nokaslr"),
+        Guest("x86_64", "qemu-system-x86_64", ALPINE_NETBOOT_URL.format("x86_64"),
+              ramdisk_url=ALPINE_RAMDISK_URL.format("x86_64"), live_machine="pc",
+              live_cmdline="nokaslr"),
+        Guest("arm", "qemu-system-arm", ALPINE_NETBOOT_URL.format("armv7"),
+              machine="virt", cpu="cortex-a7", console="ttyAMA0",
+              ramdisk_url=ALPINE_RAMDISK_URL.format("armv7"), hostlink="mmio",
+              # Left where it lands by default, the configuration space is above what a
+              # kernel without LPAE can address.
+              live_machine="virt,highmem=off", ecam=0x3f000000),
     ]
 }
 
@@ -580,6 +778,22 @@ BRIDGE = [
 ]
 
 AGENT_READY_MARKER = "frida: listening on /dev/"
+LIVE_READY_MARKER = "recovery shell launched"
+
+LINK_ANSWER_MARKER = "frida-link "
+
+LET_THE_LINK_GO = (
+    "tag=frida; echo virtio0 > /sys/bus/virtio/drivers/virtio_console/unbind; "
+    "echo $tag-link-gone"
+)
+
+LINK_GONE_MARKER = "frida-link-gone"
+
+WHERE_THE_LINK_IS = (
+    "tag=frida; echo $tag-link "
+    "$(basename $(readlink -f /sys/bus/virtio/devices/virtio0/..) | cut -d. -f1) "
+    "$(awk '/virtio0/{sub(/:/,\"\",$1); print $1}' /proc/interrupts)"
+)
 MODULE_LOAD_FAILED_MARKER = "frida-kmod-load-failed"
 
 SLEPT_WHERE_FORBIDDEN_MARKER = "Voluntary context switch within RCU"

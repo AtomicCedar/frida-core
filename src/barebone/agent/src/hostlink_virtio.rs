@@ -65,9 +65,9 @@ const PCI_BASE_ADDRESS_0: u8 = 0x10;
 const PCI_INTERRUPT_PIN: u8 = 0x3d;
 const PCI_COMMAND_INTX_DISABLE: u32 = 0x400;
 const ISA_BRIDGE_DEVFN: u8 = 0x08;
-#[cfg(target_arch = "aarch64")]
+#[cfg(any(target_arch = "aarch64", target_arch = "arm"))]
 const ECAM_DEVFN_SHIFT: usize = 12;
-#[cfg(target_arch = "aarch64")]
+#[cfg(any(target_arch = "aarch64", target_arch = "arm"))]
 const ECAM_BUS_SIZE: u64 = 256 * 4096;
 const PIRQ_ROUTE: u8 = 0x60;
 const PIRQ_DISABLED: u32 = 1 << 7;
@@ -76,6 +76,10 @@ const PCI_COMMAND_MEMORY: u32 = 1 << 1;
 const PCI_COMMAND_BUS_MASTER: u32 = 1 << 2;
 
 const PCI_CAP_ID_VENDOR: u8 = 0x09;
+const PCI_CAP_ID_MSI: u8 = 0x05;
+const PCI_CAP_ID_MSIX: u8 = 0x11;
+const PCI_MSI_ENABLE: u32 = 1 << 16;
+const PCI_MSIX_ENABLE: u32 = 1 << 31;
 
 const VIRTIO_CAP_CFG_TYPE: u8 = 3;
 const VIRTIO_CAP_BAR: u8 = 4;
@@ -229,6 +233,7 @@ impl Vq {
 
     fn free_chain(&mut self, mut idx: u16) {
         let dp = self.desc_va as *mut Desc;
+        let head = idx;
         loop {
             self.free_cnt += 1;
             let (flags, next) = unsafe {
@@ -243,7 +248,7 @@ impl Vq {
         unsafe {
             (*dp.add(idx as usize)).next = self.free_head;
         }
-        self.free_head = idx;
+        self.free_head = head;
     }
 
     fn push_avail(&mut self, head: u16) {
@@ -251,22 +256,23 @@ impl Vq {
         let ring = unsafe { (ap as *mut u8).add(size_of::<Avail>()) as *mut u16 };
         let slot = (self.avail_idx % self.size) as usize;
         unsafe {
-            *ring.add(slot) = head;
+            ring.add(slot).write_volatile(head);
         }
         wmb();
         self.avail_idx = self.avail_idx.wrapping_add(1);
         unsafe {
-            (*ap).idx = self.avail_idx;
+            (&raw mut (*ap).idx).write_volatile(self.avail_idx);
         }
     }
 
     fn pop_used(&mut self) -> Option<UsedElem> {
         let up = self.used_va as *mut Used;
-        if unsafe { (*up).idx } == self.used_idx {
+        if unsafe { (&raw const (*up).idx).read_volatile() } == self.used_idx {
             return None;
         }
+        rmb();
         let ring = unsafe { (up as *mut u8).add(size_of::<Used>()) as *mut UsedElem };
-        let elem = unsafe { *ring.add((self.used_idx % self.size) as usize) };
+        let elem = unsafe { ring.add((self.used_idx % self.size) as usize).read_volatile() };
         self.used_idx = self.used_idx.wrapping_add(1);
         Some(elem)
     }
@@ -460,7 +466,7 @@ impl Hostlink {
         }
 
         A_TURN_IS_WANTED.store(true, core::sync::atomic::Ordering::Release);
-        kernel::wake(s.wake_token);
+        crate::nudge_the_loop(s.wake_token);
     }
 
     pub fn process(&self) {
@@ -846,7 +852,7 @@ extern "C" fn isr_wake(token: *mut c_void, _refcon: *mut c_void, _nub: *mut c_vo
         }
     }
     A_TURN_IS_WANTED.store(true, core::sync::atomic::Ordering::Release);
-    kernel::wake(token as *const u8);
+    crate::nudge_the_loop(token as *const u8);
 }
 
 pub fn a_turn_is_wanted() -> bool {
@@ -976,16 +982,15 @@ impl Regs {
         }
     }
 
-    fn isr_ack(&self) {
+    fn isr_ack(&self) -> u8 {
         match self {
             Regs::Mmio(base) => {
                 if (r32(*base, ISR) & INT_VRING) != 0 {
                     w32(*base, ISR_ACK, INT_VRING);
                 }
+                0
             }
-            Regs::Pci(p) => {
-                r8(p.isr, 0);
-            }
+            Regs::Pci(p) => r8(p.isr, 0),
         }
     }
 }
@@ -993,7 +998,7 @@ impl Regs {
 #[derive(Copy, Clone)]
 struct Bus {
     number: u8,
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "aarch64", target_arch = "arm"))]
     config: *mut u8,
 }
 
@@ -1003,7 +1008,7 @@ impl Bus {
         Bus { number: 0 }
     }
 
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "aarch64", target_arch = "arm"))]
     fn first(ecam: u64) -> Self {
         let config = kernel::map_io(ecam, ECAM_BUS_SIZE) as *mut u8;
         Bus { number: 0, config }
@@ -1014,7 +1019,7 @@ impl Bus {
         PciDevice { bus: self.number, devfn }
     }
 
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "aarch64", target_arch = "arm"))]
     fn function(&self, devfn: u8) -> PciDevice {
         PciDevice {
             bus: self.number,
@@ -1028,7 +1033,7 @@ impl Bus {
 struct PciDevice {
     bus: u8,
     devfn: u8,
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "aarch64", target_arch = "arm"))]
     config: *mut u8,
 }
 
@@ -1055,6 +1060,7 @@ impl PciDevice {
     }
 
     fn map_virtio_regs(&self) -> Option<Regs> {
+        self.silence_message_interrupts();
         self.enable_memory_and_bus_mastering();
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         self.route_interrupt_line();
@@ -1108,9 +1114,25 @@ impl PciDevice {
         Some(self.read_config_byte(PCI_INTERRUPT_LINE) as u32)
     }
 
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "aarch64", target_arch = "arm"))]
     fn irq_line(&self) -> Option<u32> {
         kernel::pci_interrupt(self.bus, self.devfn)
+    }
+
+    fn silence_message_interrupts(&self) {
+        let mut cap = (self.read_config(PCI_CAP_LIST_POINTER) & 0xfc) as u8;
+        while cap != 0 {
+            let header = self.read_config(cap);
+            let cleared = match (header & 0xff) as u8 {
+                PCI_CAP_ID_MSIX => header & !PCI_MSIX_ENABLE,
+                PCI_CAP_ID_MSI => header & !PCI_MSI_ENABLE,
+                _ => header,
+            };
+            if cleared != header {
+                self.write_config(cap, cleared);
+            }
+            cap = ((header >> 8) & 0xfc) as u8;
+        }
     }
 
     fn enable_memory_and_bus_mastering(&self) {
@@ -1176,12 +1198,12 @@ impl PciDevice {
             | ((offset as u32) & 0xfc)
     }
 
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "aarch64", target_arch = "arm"))]
     fn read_config(&self, offset: u8) -> u32 {
         r32(self.config, (offset & 0xfc) as usize)
     }
 
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "aarch64", target_arch = "arm"))]
     fn write_config(&self, offset: u8, value: u32) {
         w32(self.config, (offset & 0xfc) as usize, value);
     }
@@ -1239,7 +1261,17 @@ fn wmb() {
     unsafe { core::arch::asm!("sfence", options(nostack, preserves_flags)) }
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(any(target_arch = "aarch64", target_arch = "arm"))]
 fn wmb() {
     unsafe { core::arch::asm!("dmb ishst", options(nostack, preserves_flags)) }
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+fn rmb() {
+    unsafe { core::arch::asm!("lfence", options(nostack, preserves_flags)) }
+}
+
+#[cfg(any(target_arch = "aarch64", target_arch = "arm"))]
+fn rmb() {
+    unsafe { core::arch::asm!("dmb ish", options(nostack, preserves_flags)) }
 }

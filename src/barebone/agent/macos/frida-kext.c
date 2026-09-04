@@ -1,5 +1,6 @@
 
 #include <libkern/libkern.h>
+#include <mach/kmod.h>
 #include <mach/mach_types.h>
 #include <miscfs/devfs/devfs.h>
 #include <sys/conf.h>
@@ -15,6 +16,7 @@
 
 extern int frida_agent_start (uint64_t own_base, uint64_t own_size);
 extern void frida_agent_stop (void);
+extern void frida_agent_wake (void);
 
 #define FRIDA_KERNEL_ADDRS(X) \
   X (panic) \
@@ -22,8 +24,9 @@ extern void frida_agent_stop (void);
   X (proc_iterate) X (proc_find) X (proc_rele) X (proc_pid) X (proc_best_name) X (proc_task) \
   X (current_task) X (current_thread) X (get_task_map) X (get_bsdtask_info) \
   X (mach_vm_allocate) X (mach_vm_deallocate) X (mach_vm_protect) X (mach_vm_remap) \
+  X (kernel_map) X (kernel_pmap) X (pmap_find_phys) X (ml_static_ptovirt) \
   X (mach_vm_region) X (mach_vm_region_recurse) \
-  X (vm_map_copyin) X (vm_map_copyout) \
+  X (vm_map_copyin) X (vm_map_copyout) X (vm_map_wire_external) \
   X (thread_create) X (thread_set_state) X (thread_resume) X (thread_suspend) \
   X (thread_terminate) X (kernel_thread_start) \
   X (task_suspend) X (task_resume) X (task_clear_return_wait) X (task_threads) X (task_info) \
@@ -66,12 +69,16 @@ const uintptr_t frida_agent_heap_start = 0;
 const uintptr_t frida_agent_relocs_start = 0;
 const uintptr_t frida_agent_relocs_end = 0;
 
+typedef int (* FridaProcCallout) (proc_t process, void * argument);
+
 const unsigned frida_agent_disc_thread_continue =
     ptrauth_type_discriminator (thread_continue_t);
-const unsigned frida_agent_disc_interrupt_handler = 0xd36;
+const unsigned frida_agent_disc_proc_callout =
+    ptrauth_type_discriminator (FridaProcCallout);
 
 _Static_assert (ptrauth_type_discriminator (thread_continue_t) == 0xd507,
     "the agent signs a thread's entry with 0xd507");
+
 
 int
 getentropy (void * buffer, size_t size)
@@ -90,13 +97,21 @@ sys_icache_invalidate (void * start, size_t size)
 
 #define FRIDA_IOC_SET_ADDR _IOW ('F', 1, FridaAddrRequest)
 #define FRIDA_IOC_START _IO ('F', 2)
+#define FRIDA_IOC_GET_IMAGE _IOR ('F', 3, FridaImageInfo)
 
 typedef struct _FridaAddrRequest FridaAddrRequest;
+typedef struct _FridaImageInfo FridaImageInfo;
 
 struct _FridaAddrRequest
 {
   char name[64];
   uint64_t address;
+};
+
+struct _FridaImageInfo
+{
+  uint64_t base;
+  uint64_t size;
 };
 
 #define FRIDA_LINK_ROOM (1024 * 1024)
@@ -197,6 +212,8 @@ frida_kext_stop (kmod_info_t * ki, void * d)
 
   return KERN_SUCCESS;
 }
+
+KMOD_EXPLICIT_DECL (re.frida.agent, "1.0", frida_kext_start, frida_kext_stop)
 
 static int
 frida_dev_open (dev_t dev, int flags, int devtype, struct proc * p)
@@ -308,6 +325,9 @@ frida_dev_write (dev_t dev, struct uio * uio, int ioflag)
 
   lck_mtx_unlock (frida_link.lock);
 
+  if (result == 0 && frida_running)
+    frida_agent_wake ();
+
   return result;
 }
 
@@ -341,6 +361,20 @@ frida_kmod_link_send (const void * data, size_t size)
   lck_mtx_unlock (frida_link.lock);
 
   return 0;
+}
+
+bool
+frida_kmod_link_pending (void)
+{
+  bool pending;
+
+  lck_mtx_lock (frida_link.lock);
+
+  pending = frida_link.from_host_len != 0;
+
+  lck_mtx_unlock (frida_link.lock);
+
+  return pending;
 }
 
 ssize_t
@@ -385,6 +419,15 @@ frida_dev_ioctl (dev_t dev, u_long cmd, caddr_t data, int fflag, struct proc * p
       }
 
       return ENOENT;
+    }
+    case FRIDA_IOC_GET_IMAGE:
+    {
+      FridaImageInfo * info = (FridaImageInfo *) data;
+
+      info->base = frida_own_base;
+      info->size = frida_own_size;
+
+      return 0;
     }
     case FRIDA_IOC_START:
     {

@@ -448,17 +448,20 @@ namespace Frida {
 				Cancellable? cancellable = null) throws Error, IOError {
 #if HAVE_BAREBONE_BACKEND
 			check_open ();
+			yield ensure_service (cancellable);
 
-			var barebone_device = yield get_device ((device) => {
-					return device.provider is BareboneHostSessionProvider;
-				}, 0, cancellable);
+			string id = options?.id ?? (BAREBONE_DEVICE_ID_PREFIX + (next_barebone_device_serial++).to_string ());
+
+			foreach (var existing in devices) {
+				if (existing.id == id)
+					throw new Error.INVALID_ARGUMENT ("Device \"%s\" already exists", id);
+			}
 
 			var raw_options = new HostSessionOptions ();
 			raw_options.map["config"] = config;
 
-			string id = BAREBONE_DEVICE_ID_PREFIX + (next_barebone_device_serial++).to_string ();
-
-			var device = new Device (this, barebone_device.provider, id, options?.name, raw_options, options?.icon);
+			var provider = new BareboneHostSessionProvider ();
+			var device = new Device (this, provider, id, options?.name, raw_options, options?.icon);
 			devices.add (device);
 			added (device);
 			changed ();
@@ -497,7 +500,7 @@ namespace Frida {
 
 			yield ensure_service (cancellable);
 
-			if (!device.id.has_prefix (BAREBONE_DEVICE_ID_PREFIX) || !devices.contains (device))
+			if (!(device.provider is BareboneHostSessionProvider) || !devices.contains (device))
 				throw new Error.INVALID_ARGUMENT ("Device not found");
 
 			yield device._do_close (APPLICATION_REQUESTED, true, cancellable);
@@ -2120,6 +2123,17 @@ namespace Frida {
 	 */
 	public sealed class BareboneDeviceOptions : Object {
 		/**
+		 * A stable identifier to give the device, or null to generate one. A caller
+		 * that derives it from something it persists gets the same id back every
+		 * time it adds the device, even across a restart of its own, so anything
+		 * that refers to the target by device id stays valid.
+		 */
+		public string? id {
+			get;
+			set;
+		}
+
+		/**
 		 * What to call the device, or null to name it after the backend.
 		 */
 		public string? name {
@@ -2223,7 +2237,10 @@ namespace Frida {
 	 *      "path": "/path/to/target/aarch64-unknown-none/release/frida-barebone-agent",
 	 *      "transport": {
 	 *        "type": "hostlink",
-	 *        "qmp": "unix:/path/to/qmp.sock"
+	 *        "qmp": "unix:/path/to/qmp.sock",
+	 *        "bus": "frida-vserial.0",
+	 *        "mmio": "0xa003e00",
+	 *        "irq": 47
 	 *      }
 	 *    },
 	 *    "image": {
@@ -2734,9 +2751,21 @@ namespace Frida {
 			set;
 		}
 
+		public uint64 mmio {
+			get;
+			set;
+		}
+
+		public uint irq {
+			get;
+			set;
+		}
+
 		public override void check () throws Error {
 			if (qmp == null)
 				throw new Error.NOT_SUPPORTED ("Config for 'agent.transport.qmp' is missing");
+			if (mmio != 0 && bus == null)
+				throw new Error.NOT_SUPPORTED ("Config for 'agent.transport.bus' is missing");
 			if (!qmp.has_prefix ("unix:"))
 				throw new Error.NOT_SUPPORTED ("Config for 'agent.transport.qmp' must be a UNIX socket for now");
 		}

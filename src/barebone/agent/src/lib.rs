@@ -28,6 +28,7 @@ use bindings::{
     GAsyncResult, GBytes, GError, GMainContext, GObject, GSource, GSourceFunc, GSourceFuncs,
     GVariant, GumMemoryRange, gboolean, g_main_context_acquire, g_main_context_check,
     g_main_context_dispatch, g_main_context_prepare, g_main_context_query, g_main_context_release,
+    g_main_context_wakeup,
     g_source_attach, g_source_new, g_source_unref,
     GumScript, GumScriptBackend, g_error_free, g_free, g_main_context_iteration,
     g_main_context_push_thread_default, g_memdup2, g_object_unref, g_variant_check_format_string,
@@ -103,6 +104,7 @@ mod xnu_hiding;
 mod xnu_injection;
 #[cfg(feature = "xnu-core")]
 mod xnu_libsystem;
+#[cfg(feature = "xnu-core")]
 mod xnu_unlisted;
 #[cfg(feature = "xnu-core")]
 mod xnu_mapped;
@@ -562,6 +564,19 @@ mod entrypoint_xnu_kext {
         kernel::log("frida: agent stopped\n\0");
     }
 
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frida_agent_wake() {
+        let context = LOOP_CONTEXT.load(Ordering::Acquire) as *mut GMainContext;
+        if context.is_null() {
+            return;
+        }
+
+        unsafe { g_main_context_wakeup(context) };
+    }
+
+    static LOOP_CONTEXT: core::sync::atomic::AtomicUsize =
+        core::sync::atomic::AtomicUsize::new(0);
+
     unsafe extern "C" fn worker(_parameter: *mut c_void, _wait_result: i32) {
         unsafe {
             crate::run_constructors();
@@ -577,7 +592,9 @@ mod entrypoint_xnu_kext {
             }
 
             let main_context = adopt_js_context();
+            LOOP_CONTEXT.store(main_context as usize, Ordering::Release);
             run_main_loop(main_context);
+            LOOP_CONTEXT.store(0, Ordering::Release);
 
             destroy_all_scripts(main_context);
             kernel::stop_copies();
@@ -682,7 +699,7 @@ mod entrypoint_linux {
 #[cfg(feature = "linux")]
 pub use entrypoint_linux::{frida_agent_start, frida_agent_stop};
 #[cfg(feature = "xnu-kext")]
-pub use entrypoint_xnu_kext::{frida_agent_start, frida_agent_stop};
+pub use entrypoint_xnu_kext::{frida_agent_start, frida_agent_stop, frida_agent_wake};
 #[cfg(feature = "blob")]
 pub use entrypoint_blob::_start;
 
@@ -732,7 +749,7 @@ impl Transport {
 
 // Configuration space is reached through I/O ports where there are any, and only a machine
 // without them is told where it is mapped instead.
-#[cfg(target_arch = "aarch64")]
+#[cfg(any(target_arch = "aarch64", target_arch = "arm"))]
 unsafe fn where_configuration_space_is_mapped(transport: *mut GVariant) -> u64 {
     use crate::bindings::{g_variant_get_child_value, g_variant_get_uint64, g_variant_unref};
 
@@ -848,7 +865,9 @@ pub(crate) unsafe fn run_constructors() {
     unsafe {
         let mut entry = frida_agent_init_start;
         while entry != frida_agent_init_end {
-            let start: extern "C" fn() = core::mem::transmute((entry as *const usize).read());
+            let signed = (entry as *const usize).read() as *const u8;
+            let start: extern "C" fn() =
+                core::mem::transmute(crate::pac::ptrauth_strip_data(signed));
             start();
             entry += core::mem::size_of::<usize>();
         }
@@ -893,7 +912,7 @@ fn writable_half_size() -> usize {
 
 // A relocation names the slot first, and the rest of it says the same thing as the value that
 // the slot already holds.
-#[cfg(target_arch = "x86")]
+#[cfg(any(target_arch = "x86", target_arch = "arm"))]
 const RELOCATION_SIZE: usize = 8;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 const RELOCATION_SIZE: usize = 24;
@@ -971,12 +990,12 @@ pub(crate) unsafe fn init_gum_without_exceptor() {
 
 unsafe fn init_gum_with_exceptor(exceptor: bool) {
     unsafe {
-        bindings::g_set_panic_handler(Some(frida_panic_handler), ptr::null_mut());
+        bindings::g_set_panic_handler(Some(signed_to_be_called_back(frida_panic_handler, 0)), ptr::null_mut());
         bindings::gum_init_embedded();
         if exceptor {
             bindings::gum_exceptor_obtain();
         }
-        bindings::g_log_set_default_handler(Some(frida_log_handler), ptr::null_mut());
+        bindings::g_log_set_default_handler(Some(signed_to_be_called_back(frida_log_handler, 0)), ptr::null_mut());
 
         gum_script_scheduler_disable_background_thread(gum_script_backend_get_scheduler());
     }
@@ -1024,6 +1043,8 @@ fn destination_of(variant: *mut GVariant) -> u32 {
 
 pub(crate) unsafe fn adopt_js_context() -> *mut GMainContext {
     unsafe {
+        JS_THREAD_ID = kernel::current_thread_id();
+
         let context = gum_script_scheduler_get_js_context(gum_script_backend_get_scheduler());
 
         // Acquires the context as well, which is what lets this thread run the jobs the
@@ -1033,6 +1054,13 @@ pub(crate) unsafe fn adopt_js_context() -> *mut GMainContext {
 
         context
     }
+}
+
+static mut JS_THREAD_ID: u64 = 0;
+
+pub(crate) fn on_js_thread() -> bool {
+    let id = unsafe { JS_THREAD_ID };
+    id != 0 && kernel::current_thread_id() == id
 }
 
 pub(crate) static STOP_REQUESTED: core::sync::atomic::AtomicBool =
@@ -1046,18 +1074,16 @@ pub(crate) fn stop_requested() -> bool {
 }
 
 fn run_main_loop(main_context: *mut GMainContext) {
-
+    SERVICE_CONTEXT.store(main_context as usize, Ordering::Release);
 
     glib::own_the_loop();
 
-    #[cfg(any(feature = "win9x", feature = "winnt", feature = "linux-injected",
-        feature = "xnu-core"))]
+    #[cfg(any(feature = "blob", feature = "xnu-core"))]
     watch_for_work(main_context, kernel_half_has_work, serve_the_kernel_half);
 
     unsafe {
         loop {
-            #[cfg(not(any(feature = "win9x", feature = "winnt", feature = "linux-injected",
-                feature = "xnu-core")))]
+            #[cfg(not(any(feature = "blob", feature = "xnu-core")))]
             transport_get_unchecked().process();
 
             #[cfg(feature = "linux")]
@@ -1078,6 +1104,11 @@ fn run_main_loop(main_context: *mut GMainContext) {
 fn kernel_half_has_work() -> bool {
     #[cfg(not(feature = "xnu-core"))]
     if hostlink_virtio::a_turn_is_wanted() {
+        return true;
+    }
+
+    #[cfg(feature = "xnu-kext")]
+    if hostlink_chardev::a_turn_is_wanted() {
         return true;
     }
 
@@ -1136,9 +1167,35 @@ pub(crate) fn watch_for_work(main_context: *mut GMainContext, ready: fn() -> boo
         WORK_READY = Some(ready);
         WORK_SERVE = Some(serve);
 
+        #[cfg(feature = "xnu-kext")]
+        sign_what_the_loop_calls_back();
+
         let source = g_source_new(&raw mut WORK_FUNCS, core::mem::size_of::<GSource>() as u32);
         g_source_attach(source, main_context);
         g_source_unref(source);
+    }
+}
+
+#[cfg(feature = "xnu-kext")]
+pub(crate) unsafe fn signed_to_be_called_back<T>(callback: T, discriminator: core::ffi::c_uint) -> T {
+    unsafe {
+        core::mem::transmute_copy(&crate::pac::ptrauth_sign(
+            core::mem::transmute_copy::<T, *const u8>(&callback), discriminator as usize))
+    }
+}
+
+#[cfg(not(feature = "xnu-kext"))]
+pub(crate) unsafe fn signed_to_be_called_back<T>(callback: T, _discriminator: core::ffi::c_uint) -> T {
+    callback
+}
+
+#[cfg(feature = "xnu-kext")]
+unsafe fn sign_what_the_loop_calls_back() {
+    unsafe {
+        let funcs = &raw mut WORK_FUNCS;
+        (*funcs).prepare = Some(signed_to_be_called_back(work_prepare, 0));
+        (*funcs).check = Some(signed_to_be_called_back(work_check, 0));
+        (*funcs).dispatch = Some(signed_to_be_called_back(work_dispatch, 0));
     }
 }
 
@@ -1187,12 +1244,25 @@ pub(crate) unsafe fn dispatch_pending_work(main_context: *mut GMainContext) {
     }
 }
 
+static SERVICE_CONTEXT: core::sync::atomic::AtomicUsize =
+    core::sync::atomic::AtomicUsize::new(0);
+
+pub(crate) fn nudge_the_loop(token: *const u8) {
+    let context = SERVICE_CONTEXT.load(Ordering::Acquire) as *mut GMainContext;
+    if !context.is_null() {
+        unsafe { g_main_context_wakeup(context) };
+    }
+    kernel::wake(token);
+}
+
 pub(crate) fn destroy_all_scripts(main_context: *mut GMainContext) {
     unsafe {
         let scripts = core::mem::take(core::ptr::addr_of_mut!(SCRIPTS).as_mut().unwrap());
         for (_, script) in scripts {
             UNLOADS_IN_FLIGHT.fetch_add(1, Ordering::Relaxed);
-            gum_script_unload(script, ptr::null_mut(), Some(on_script_unloaded), ptr::null_mut());
+            gum_script_unload(script, ptr::null_mut(),
+                Some(signed_to_be_called_back(on_script_unloaded, 0)),
+                ptr::null_mut());
         }
 
         while UNLOADS_IN_FLIGHT.load(Ordering::Relaxed) != 0 {
@@ -1257,7 +1327,7 @@ fn deserialize_message(data: &[u8]) -> Option<*mut GVariant> {
             data_copy,
             data.len() as gsize,
             0,
-            Some(g_free),
+            Some(signed_to_be_called_back(g_free, 0)),
             data_copy,
         );
         g_variant_type_free(variant_type);
@@ -1946,13 +2016,14 @@ fn handle_spawn_process(payload: *mut GVariant) -> HandlerResponse {
 
 #[cfg(any(feature = "win9x", feature = "winnt", feature = "linux-injected", feature = "xnu-core"))]
 fn handle_stop() -> HandlerResponse {
-    #[cfg(feature = "xnu-core")]
+    #[cfg(feature = "xnu")]
     {
         kernel::give_the_word_back();
         kernel::take_the_bell_down();
         kernel::show_our_threads_again();
     }
 
+    #[cfg(feature = "blob")]
     STOP_REQUESTED.store(true, Ordering::Release);
 
     HandlerResponse::success(unsafe { g_variant_new_uint32(0) })
@@ -1991,7 +2062,7 @@ fn handle_create_script(payload_variant: *mut GVariant, request_id: u16) -> Opti
             source,
             ptr::null_mut(),
             ptr::null_mut(),
-            Some(on_script_created),
+            Some(signed_to_be_called_back(on_script_created, 0)),
             Box::into_raw(Box::new(request_id)) as *mut c_void,
         );
 
@@ -2033,7 +2104,7 @@ unsafe fn script_is_ready(script: *mut GumScript, error: *mut GError, request_id
 
         gum_script_set_message_handler(
             script,
-            Some(frida_message_handler),
+            Some(signed_to_be_called_back(frida_message_handler, 0)),
             Box::into_raw(Box::new(script_id)) as *mut c_void,
             None,
         );
@@ -2142,7 +2213,7 @@ fn handle_load_script(payload_variant: *mut GVariant, request_id: u16) -> Option
         gum_script_load(
             script,
             ptr::null_mut(),
-            Some(on_script_loaded),
+            Some(signed_to_be_called_back(on_script_loaded, 0)),
             Box::into_raw(Box::new(request_id)) as *mut c_void,
         );
 
@@ -2179,7 +2250,7 @@ fn handle_destroy_script(payload_variant: *mut GVariant, request_id: u16) -> Opt
         gum_script_unload(
             script,
             ptr::null_mut(),
-            Some(on_script_destroyed),
+            Some(signed_to_be_called_back(on_script_destroyed, 0)),
             Box::into_raw(Box::new(request_id)) as *mut c_void,
         );
 

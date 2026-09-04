@@ -45,9 +45,9 @@ SECTIONS {
     _free_irq = .; . += 4;
     _request_threaded_irq = .; . += 4;
     _vmap = .; . += 4;
-    _pcpu_hot = .; . += 4;
+    ___pv_offset = .; . += 4;
+    _pgprot_kernel = .; . += 4;
     _ioremap = .; . += 4;
-    ___default_kernel_pte_mask = .; . += 4;
     _init_task = .; . += 4;
     _tasklist_lock = .; . += 4;
     __raw_read_lock = .; . += 4;
@@ -70,19 +70,17 @@ SECTIONS {
     ___tracepoint_sched_process_exit = .; . += 4;
     ___tracepoint_sched_process_exec = .; . += 4;
     _vunmap = .; . += 4;
-    __copy_to_user = .; . += 4;
+    _arm_copy_to_user = .; . += 4;
     _down_read = .; . += 4;
     _up_read = .; . += 4;
     _get_user_pages_unlocked = .; . += 4;
     _get_user_pages_remote = .; . += 4;
-    _do_futex = .; . += 4;
     _user_mode_thread = .; . += 4;
     ___start_BTF = .; . += 4;
     ___stop_BTF = .; . += 4;
     _call_usermodehelper_setup = .; . += 4;
     _call_usermodehelper_exec = .; . += 4;
-    __copy_from_user = .; . += 4;
-    _access_process_vm = .; . += 4;
+    _arm_copy_from_user = .; . += 4;
   }
   /* Everything above is only ever read, so a process being instrumented can be shown the very
      same pages; everything below it each copy needs its own of. */
